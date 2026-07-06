@@ -170,7 +170,9 @@ export default function App() {
         if (passSum >= PASS_THRESHOLD && prevPassSum < PASS_THRESHOLD) {
           showToast(`🎉 [선정 확정] ${team.name} 팀이 연수팀으로 최종 선정되었습니다!`, 'success');
         } else if (updatedVotes.unsuitable >= FAIL_THRESHOLD && team.votes.unsuitable < FAIL_THRESHOLD) {
-          showToast(`❌ [선정 불가] ${team.name} 팀이 연수팀 선정 불가 판정을 받았습니다.`, 'error');
+          showToast(`❌ [선정 불가] ${team.name} 팀이 선정 불가 판정을 받았습니다.`, 'error');
+        } else if (passSum === 6 && updatedVotes.unsuitable === 6) {
+          showToast(`⚖️ [논의 필요] 찬성 6표, 반대 6표 동률이 되어 심사위원단 논의가 필요합니다.`, 'info');
         } else {
           // 일반적인 클릭 알림
           const typeKo = type === 'suitable' ? '적합' : type === 'conditional' ? '조건부 적합' : '부적합';
@@ -249,7 +251,7 @@ export default function App() {
     const passSum = votes.suitable + votes.conditional;
     const failSum = votes.unsuitable;
 
-    if (passSum >= PASS_THRESHOLD) {
+    if (passSum >= 7) {
       return {
         status: 'SELECTED' as const,
         text: '연수팀 선정',
@@ -258,26 +260,31 @@ export default function App() {
         color: 'emerald'
       };
     }
-    if (failSum >= FAIL_THRESHOLD) {
+    if (failSum >= 7) {
       return {
         status: 'REJECTED' as const,
-        text: '연수팀 선정 불가',
+        text: '선정 불가',
         badgeClass: 'bg-rose-500 text-white shadow-md font-extrabold',
         cardClass: 'border-3 border-rose-500 bg-rose-50/70 opacity-95 transition-all duration-300',
         color: 'rose'
       };
     }
-    
-    // 두 조건 모두 만족하지 않는 초기 또는 중간 상태
-    const totalInput = votes.suitable + votes.conditional + votes.unsuitable;
-    const isFull = totalInput >= TOTAL_JUDGES;
+    if (passSum === 6 && failSum === 6) {
+      return {
+        status: 'DISCUSS' as const,
+        text: '심사위원단 논의 필요',
+        badgeClass: 'bg-amber-500 text-white shadow-md font-extrabold animate-pulse',
+        cardClass: 'border-3 border-amber-500 bg-amber-50/70 shadow-[0_0_20px_rgba(245,158,11,0.2)] transition-all duration-300',
+        color: 'amber'
+      };
+    }
 
     return {
       status: 'EVALUATING' as const,
-      text: isFull ? '재논의 필요' : '집계 진행 중',
+      text: '집계 중',
       badgeClass: 'bg-slate-200 text-slate-700 border border-slate-300',
       cardClass: 'border border-slate-200 bg-white shadow-sm hover:shadow-md transition-all duration-300',
-      color: 'amber'
+      color: 'slate'
     };
   };
 
@@ -299,22 +306,26 @@ export default function App() {
             <h1 className="text-2xl font-black font-display text-white tracking-tight">
               BinglRoad 해외연수 심사 결과 Dashboard
             </h1>
-            <p className="text-slate-400 text-sm mt-1">심사위원: 12명 | 실시간 집계</p>
           </div>
 
           {/* 대시보드 전역 제어 장치들 */}
           <div className="flex flex-wrap items-center gap-3">
             
             {/* 기준 요약 배지 */}
-            <div className="hidden lg:flex items-center gap-3 bg-slate-800/80 border border-slate-700 px-3.5 py-1.5 rounded-xl">
+            <div className="flex items-center gap-4 bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl">
               <div>
-                <span className="text-[10px] block text-slate-400 uppercase font-bold">선정 기준</span>
-                <span className="text-xs font-extrabold text-emerald-400">적합+조건부 ≥ {PASS_THRESHOLD}표</span>
+                <span className="text-xs block text-slate-400 font-bold mb-0.5">심사 인원</span>
+                <span className="text-sm md:text-base font-extrabold text-indigo-400">총 {TOTAL_JUDGES}명</span>
               </div>
-              <div className="border-l border-slate-700 h-6"></div>
+              <div className="border-l border-slate-700 h-8"></div>
               <div>
-                <span className="text-[10px] block text-slate-400 uppercase font-bold">선정 불가</span>
-                <span className="text-xs font-extrabold text-rose-400">부적합 ≥ {FAIL_THRESHOLD}표</span>
+                <span className="text-xs block text-slate-400 font-bold mb-0.5">선정 기준</span>
+                <span className="text-sm md:text-base font-extrabold text-emerald-400">적합+조건부 ≥ {PASS_THRESHOLD}표</span>
+              </div>
+              <div className="border-l border-slate-700 h-8"></div>
+              <div>
+                <span className="text-xs block text-slate-400 font-bold mb-0.5">선정 불가</span>
+                <span className="text-sm md:text-base font-extrabold text-rose-400">부적합 ≥ {FAIL_THRESHOLD}표</span>
               </div>
             </div>
 
@@ -411,7 +422,7 @@ export default function App() {
                 <div className="flex justify-between items-start mb-6">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">0{index+1}</span>
+                      <span className="font-mono text-sm md:text-base font-black text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-lg">{index+1}</span>
                       <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
                         {team.name} <span className="text-slate-500 font-bold text-lg">({team.location})</span>
                       </h2>
