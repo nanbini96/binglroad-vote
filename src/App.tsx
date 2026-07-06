@@ -122,6 +122,11 @@ export default function App() {
     localStorage.setItem('binglroad_votes_v1', JSON.stringify(teams));
   }, [teams]);
 
+  // 브라우저 탭 제목 설정
+  useEffect(() => {
+    document.title = "BinglRoad 해외연수 심사 결과";
+  }, []);
+
   // 3. 토스트 알림 자동 사라짐 타이머
   useEffect(() => {
     if (toast) {
