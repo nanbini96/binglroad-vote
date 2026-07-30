@@ -20,9 +20,9 @@ import {
 // ==========================================
 // [운영 설정 상수] - 초보자분들도 여기서 쉽게 수정할 수 있습니다!
 // ==========================================
-const TOTAL_JUDGES = 12;      // 총 심사위원 수
-const PASS_THRESHOLD = 7;     // 선정 기준 표수 (적합 + 조건부 적합 합계)
-const FAIL_THRESHOLD = 7;     // 선정 불가 기준 표수 (부적합 합계)
+const TOTAL_JUDGES = 11;      // 총 심사위원 수
+const PASS_THRESHOLD = 6;     // 선정 기준 표수 (적합 + 조건부 적합 합계)
+const FAIL_THRESHOLD = 6;     // 선정 불가 기준 표수 (부적합 합계)
 
 // [팀 데이터 타입 정의]
 interface Team {
@@ -176,8 +176,6 @@ export default function App() {
           showToast(`🎉 [선정 확정] ${team.name} 팀이 연수팀으로 최종 선정되었습니다!`, 'success');
         } else if (updatedVotes.unsuitable >= FAIL_THRESHOLD && team.votes.unsuitable < FAIL_THRESHOLD) {
           showToast(`❌ [선정 불가] ${team.name} 팀이 선정 불가 판정을 받았습니다.`, 'error');
-        } else if (passSum === 6 && updatedVotes.unsuitable === 6) {
-          showToast(`⚖️ [논의 필요] 찬성 6표, 반대 6표 동률이 되어 심사위원단 논의가 필요합니다.`, 'info');
         } else {
           // 일반적인 클릭 알림
           const typeKo = type === 'suitable' ? '적합' : type === 'conditional' ? '조건부 적합' : '부적합';
@@ -256,7 +254,7 @@ export default function App() {
     const passSum = votes.suitable + votes.conditional;
     const failSum = votes.unsuitable;
 
-    if (passSum >= 7) {
+    if (passSum >= PASS_THRESHOLD) {
       return {
         status: 'SELECTED' as const,
         text: '연수팀 선정',
@@ -265,22 +263,13 @@ export default function App() {
         color: 'emerald'
       };
     }
-    if (failSum >= 7) {
+    if (failSum >= FAIL_THRESHOLD) {
       return {
         status: 'REJECTED' as const,
         text: '선정 불가',
         badgeClass: 'bg-rose-500 text-white shadow-md font-extrabold',
         cardClass: 'border-3 border-rose-500 bg-rose-50/70 opacity-95 transition-all duration-300',
         color: 'rose'
-      };
-    }
-    if (passSum === 6 && failSum === 6) {
-      return {
-        status: 'DISCUSS' as const,
-        text: '심사위원단 논의 필요',
-        badgeClass: 'bg-amber-500 text-white shadow-md font-extrabold animate-pulse',
-        cardClass: 'border-3 border-amber-500 bg-amber-50/70 shadow-[0_0_20px_rgba(245,158,11,0.2)] transition-all duration-300',
-        color: 'amber'
       };
     }
 
