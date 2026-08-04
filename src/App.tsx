@@ -20,9 +20,8 @@ import {
 // ==========================================
 // [운영 설정 상수] - 초보자분들도 여기서 쉽게 수정할 수 있습니다!
 // ==========================================
-const TOTAL_JUDGES = 11;      // 총 심사위원 수
-const PASS_THRESHOLD = 6;     // 선정 기준 표수 (적합 + 조건부 적합 합계)
-const FAIL_THRESHOLD = 6;     // 선정 불가 기준 표수 (부적합 합계)
+const TOTAL_JUDGES = 11;          // 총 심사위원 수
+const PASS_SCORE_THRESHOLD = 6.0; // 기본 선정 기준 점수
 
 // [팀 데이터 타입 정의]
 interface Team {
@@ -75,10 +74,15 @@ const INITIAL_TEAMS: Team[] = [
   }
 ];
 
+// 점수 계산 헬퍼 함수 (적합 1점, 조건부 0.5점, 부적합 0점)
+function calculateScore(votes: Team['votes']): number {
+  return votes.suitable * 1 + votes.conditional * 0.5;
+}
+
 // ==========================================
 // [보조 컴포넌트 1] 수치 변화에 반응하는 애니메이션 카운트 컴포넌트
 // ==========================================
-function AnimatedCount({ value, className }: { value: number; className?: string }) {
+function AnimatedCount({ value, className }: { value: string | number; className?: string }) {
   return (
     <AnimatePresence mode="popLayout">
       <motion.span
@@ -87,7 +91,7 @@ function AnimatedCount({ value, className }: { value: number; className?: string
         animate={{ y: 0, opacity: 1, scale: 1 }}
         exit={{ y: -8, opacity: 0, scale: 0.8 }}
         transition={{ type: 'spring', stiffness: 350, damping: 15 }}
-        className={`inline-block font-display ${className || 'text-slate-800'}`}
+        className={`inline-block font-display ${className || ''}`}
       >
         {value}
       </motion.span>
@@ -155,7 +159,7 @@ export default function App() {
         // 현재 해당 팀에 반영된 총 표수 구하기
         const totalVotes = team.votes.suitable + team.votes.conditional + team.votes.unsuitable;
 
-        // 총 표수가 12표를 초과할 수 없음
+        // 총 표수가 11표를 초과할 수 없음
         if (totalVotes >= TOTAL_JUDGES) {
           showToast(`${team.name} 팀은 이미 최대 투표수(${TOTAL_JUDGES}표)를 모두 채웠습니다!`, 'error');
           return team;
@@ -168,17 +172,19 @@ export default function App() {
         };
         const updatedHistory = [...team.history, type];
 
-        // 새로운 합계 및 상태 변화 분석하여 토스트 띄우기
-        const passSum = updatedVotes.suitable + updatedVotes.conditional;
-        const prevPassSum = team.votes.suitable + team.votes.conditional;
+        const newTotal = updatedVotes.suitable + updatedVotes.conditional + updatedVotes.unsuitable;
+        const typeKo = type === 'suitable' ? '적합' : type === 'conditional' ? '조건부 적합' : '부적합';
 
-        if (passSum >= PASS_THRESHOLD && prevPassSum < PASS_THRESHOLD) {
-          showToast(`🎉 [선정 확정] ${team.name} 팀이 연수팀으로 최종 선정되었습니다!`, 'success');
-        } else if (updatedVotes.unsuitable >= FAIL_THRESHOLD && team.votes.unsuitable < FAIL_THRESHOLD) {
-          showToast(`❌ [선정 불가] ${team.name} 팀이 선정 불가 판정을 받았습니다.`, 'error');
+        if (newTotal === TOTAL_JUDGES) {
+          const finalScore = calculateScore(updatedVotes);
+          if (finalScore < PASS_SCORE_THRESHOLD) {
+            showToast(`❌ [선정 불가] ${team.name} 팀의 총점이 ${finalScore.toFixed(1)}점으로 선정 기준(6.0점)에 미달하였습니다.`, 'error');
+          } else if (updatedVotes.conditional + updatedVotes.unsuitable > updatedVotes.suitable) {
+            showToast(`⚠️ [논의 대상] ${team.name} 팀은 조건부 적합 및 부적합 의견이 적합 의견보다 많아 심사위원 논의가 필요합니다.`, 'info');
+          } else {
+            showToast(`🎉 [선정 확정] ${team.name} 팀이 총점 ${finalScore.toFixed(1)}점으로 연수팀으로 최종 선정되었습니다!`, 'success');
+          }
         } else {
-          // 일반적인 클릭 알림
-          const typeKo = type === 'suitable' ? '적합' : type === 'conditional' ? '조건부 적합' : '부적합';
           showToast(`${team.name} 팀의 [${typeKo}] 표를 1개 추가했습니다.`, 'success');
         }
 
@@ -248,46 +254,65 @@ export default function App() {
   };
 
   // ==========================================
-  // [핵심 도메인 로직] 최종 판정 판단
+  // [핵심 도메인 로직] 최종 판정 판단 (우선순위 적용)
   // ==========================================
   const getDecision = (votes: Team['votes']) => {
-    const passSum = votes.suitable + votes.conditional;
-    const failSum = votes.unsuitable;
+    const totalEntered = votes.suitable + votes.conditional + votes.unsuitable;
+    const score = calculateScore(votes);
 
-    if (passSum >= PASS_THRESHOLD) {
+    // 투표가 11명 모두 완료되지 않은 경우 -> 「투표 진행 중」
+    if (totalEntered < TOTAL_JUDGES) {
       return {
-        status: 'SELECTED' as const,
-        text: '연수팀 선정',
-        badgeClass: 'bg-emerald-500 text-white shadow-md font-extrabold',
-        cardClass: 'border-3 border-emerald-500 bg-emerald-50/70 shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all duration-300',
-        color: 'emerald'
+        status: 'EVALUATING' as const,
+        text: '투표 진행 중',
+        badgeClass: 'bg-slate-700 text-slate-100 border border-slate-600',
+        cardClass: 'border border-slate-200 bg-white shadow-sm hover:shadow-md transition-all duration-300',
+        color: 'slate',
+        progressColor: 'bg-slate-600'
       };
     }
-    if (failSum >= FAIL_THRESHOLD) {
+
+    // 1. 총점이 6.0점 미만인 경우 -> 「선정 불가」
+    if (score < PASS_SCORE_THRESHOLD) {
       return {
         status: 'REJECTED' as const,
         text: '선정 불가',
         badgeClass: 'bg-rose-500 text-white shadow-md font-extrabold',
-        cardClass: 'border-3 border-rose-500 bg-rose-50/70 opacity-95 transition-all duration-300',
-        color: 'rose'
+        cardClass: 'border-3 border-rose-500 bg-rose-50/70 shadow-[0_0_20px_rgba(244,63,94,0.15)] transition-all duration-300',
+        color: 'rose',
+        progressColor: 'bg-rose-500'
       };
     }
 
+    // 2. 총점이 6.0점 이상이면서, 조건부 적합과 부적합의 합계가 적합 표 수보다 많은 경우 -> 「심사위원 논의 대상」
+    if (votes.conditional + votes.unsuitable > votes.suitable) {
+      return {
+        status: 'DISCUSS' as const,
+        text: '심사위원 논의 대상',
+        badgeClass: 'bg-amber-500 text-white shadow-md font-extrabold',
+        cardClass: 'border-3 border-amber-500 bg-amber-50/70 shadow-[0_0_20px_rgba(245,158,11,0.2)] transition-all duration-300',
+        color: 'amber',
+        progressColor: 'bg-amber-500'
+      };
+    }
+
+    // 3. 총점이 6.0점 이상이면서, 적합 표 수가 조건부 적합과 부적합의 합계보다 많거나 같은 경우 -> 「연수팀 선정」
     return {
-      status: 'EVALUATING' as const,
-      text: '집계 중',
-      badgeClass: 'bg-slate-200 text-slate-700 border border-slate-300',
-      cardClass: 'border border-slate-200 bg-white shadow-sm hover:shadow-md transition-all duration-300',
-      color: 'slate'
+      status: 'SELECTED' as const,
+      text: '연수팀 선정',
+      badgeClass: 'bg-emerald-500 text-white shadow-md font-extrabold',
+      cardClass: 'border-3 border-emerald-500 bg-emerald-50/70 shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all duration-300',
+      color: 'emerald',
+      progressColor: 'bg-emerald-500'
     };
   };
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 font-sans selection:bg-slate-700 selection:text-white flex flex-col pb-16 relative">
       
-      {/* 1. 세련된 상단 공지/헤더 밴드 (Professional Polish Slate-900 Theme) */}
+      {/* 1. 상단 공지/헤더 밴드 */}
       <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-xl">
-        <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           
           {/* 타이틀 및 메타 정보 */}
           <div>
@@ -302,24 +327,25 @@ export default function App() {
             </h1>
           </div>
 
-          {/* 대시보드 전역 제어 장치들 */}
+          {/* 대시보드 전역 제어 및 요약 배지 */}
           <div className="flex flex-wrap items-center gap-3">
             
-            {/* 기준 요약 배지 */}
-            <div className="flex items-center gap-4 bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl">
+            {/* 상단 요약 배지 */}
+            <div className="flex flex-wrap items-center gap-3 bg-slate-800 border border-slate-700 px-4 py-2 rounded-xl text-xs">
               <div>
-                <span className="text-xs block text-slate-400 font-bold mb-0.5">심사 인원</span>
-                <span className="text-sm md:text-base font-extrabold text-indigo-400">총 {TOTAL_JUDGES}명</span>
+                <span className="block text-slate-400 font-bold text-[10px]">심사위원</span>
+                <span className="font-extrabold text-indigo-400 text-xs sm:text-sm">총 {TOTAL_JUDGES}명</span>
               </div>
-              <div className="border-l border-slate-700 h-8"></div>
+              <div className="border-l border-slate-700 h-6"></div>
               <div>
-                <span className="text-xs block text-slate-400 font-bold mb-0.5">선정 기준</span>
-                <span className="text-sm md:text-base font-extrabold text-emerald-400">적합+조건부 ≥ {PASS_THRESHOLD}표</span>
+                <span className="block text-slate-400 font-bold text-[10px]">선정 기준</span>
+                <span className="font-extrabold text-emerald-400 text-xs sm:text-sm">총점 6.0점 이상</span>
               </div>
-              <div className="border-l border-slate-700 h-8"></div>
+
+              <div className="border-l border-slate-700 h-6"></div>
               <div>
-                <span className="text-xs block text-slate-400 font-bold mb-0.5">선정 불가</span>
-                <span className="text-sm md:text-base font-extrabold text-rose-400">부적합 ≥ {FAIL_THRESHOLD}표</span>
+                <span className="block text-slate-400 font-bold text-[10px]">선정 불가</span>
+                <span className="font-extrabold text-rose-400 text-xs sm:text-sm">총점 6.0점 미만</span>
               </div>
             </div>
 
@@ -327,7 +353,7 @@ export default function App() {
             <button
               id="master-reset-btn"
               onClick={() => setShowResetModal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 transition-all duration-200 border border-rose-500/30"
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 transition-all duration-200 border border-rose-500/30 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>전체 초기화</span>
@@ -337,46 +363,59 @@ export default function App() {
         </div>
       </header>
 
-      {/* 2. 대시보드 전반 규정 가이드 영역 (Bento Grid 스타일) */}
+      {/* 2. 대시보드 규정 가이드 영역 */}
       <main className="max-w-7xl mx-auto px-6 pt-8 flex-1 w-full">
         
-        {/* 상단 통합 점검 현황판 */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+        {/* 상단 통합 안내 현황판 (5개 카드로 가시성 극대화) */}
+        <section className="grid grid-cols-2 md:grid-cols-5 gap-3.5 mb-8">
           
-          {/* 현황 1: 심사 요약 개요 */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
-            <div className="p-3 bg-slate-100 text-slate-700 rounded-xl">
-              <Users className="w-6 h-6" />
+          {/* 1. 심사위원 */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center gap-2 text-slate-500 mb-2">
+              <Users className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-slate-400 uppercase">심사위원</span>
             </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">심사 인원 구성</p>
-              <h3 className="text-xl font-extrabold font-display text-slate-900 mt-0.5">총 {TOTAL_JUDGES}명</h3>
-              <p className="text-xs text-slate-500">심사위원 전원 종이 투표 집계</p>
-            </div>
+            <h3 className="text-lg font-black text-slate-900">총 {TOTAL_JUDGES}명</h3>
           </div>
 
-          {/* 현황 2: 적합 판정 규격 */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-              <Award className="w-6 h-6" />
+          {/* 2. 점수 기준 */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center gap-2 text-slate-500 mb-2">
+              <Sliders className="w-4 h-4 text-blue-600" />
+              <span className="text-xs font-bold text-slate-400 uppercase">점수 기준</span>
             </div>
-            <div className="flex-1">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">선정 판정 기준</p>
-              <h3 className="text-xl font-extrabold font-display text-emerald-600 mt-0.5">{PASS_THRESHOLD}표 이상</h3>
-              <p className="text-xs text-slate-500">적합 + 조건부 적합 합계</p>
-            </div>
+            <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug">
+              적합 1점 · 조건부 0.5점<br />· 부적합 0점
+            </h3>
           </div>
 
-          {/* 현황 3: 부적합 판정 규격 */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center gap-4">
-            <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
-              <XCircle className="w-6 h-6" />
+          {/* 3. 선정 기준 */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center gap-2 text-slate-500 mb-2">
+              <Award className="w-4 h-4 text-emerald-600" />
+              <span className="text-xs font-bold text-slate-400 uppercase">선정 기준</span>
             </div>
-            <div className="flex-1">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">선정 불가 기준</p>
-              <h3 className="text-xl font-extrabold font-display text-rose-600 mt-0.5">{FAIL_THRESHOLD}표 이상</h3>
-              <p className="text-xs text-slate-500">부적합 단독 표수 기준</p>
+            <h3 className="text-lg font-black text-emerald-600">총점 6.0점 이상</h3>
+          </div>
+
+          {/* 4. 논의 대상 */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center gap-2 text-slate-500 mb-2">
+              <Info className="w-4 h-4 text-amber-600" />
+              <span className="text-xs font-bold text-slate-400 uppercase">논의 대상</span>
             </div>
+            <h3 className="text-xs sm:text-sm font-black text-amber-600 leading-snug">
+              총점 6.0점 이상 중<br />조건부 적합+부적합 &gt; 적합
+            </h3>
+          </div>
+
+          {/* 5. 선정 불가 */}
+          <div className="col-span-2 md:col-span-1 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center gap-2 text-slate-500 mb-2">
+              <XCircle className="w-4 h-4 text-rose-600" />
+              <span className="text-xs font-bold text-slate-400 uppercase">선정 불가</span>
+            </div>
+            <h3 className="text-lg font-black text-rose-600">총점 6.0점 미만</h3>
           </div>
 
         </section>
@@ -386,7 +425,7 @@ export default function App() {
           {teams.map((team, index) => {
             const decision = getDecision(team.votes);
             const totalEntered = team.votes.suitable + team.votes.conditional + team.votes.unsuitable;
-            const passSum = team.votes.suitable + team.votes.conditional;
+            const score = calculateScore(team.votes);
             
             // 프로그래스 바 퍼센트 계산
             const getPct = (val: number) => {
@@ -400,7 +439,7 @@ export default function App() {
                 layoutId={team.id}
                 className={`rounded-2xl p-6 transition-all duration-300 relative flex flex-col justify-between overflow-hidden ${decision.cardClass}`}
               >
-                {/* 우측 상단 선정/탈락 백그라운드 워터마크 아이콘 */}
+                {/* 우측 상단 백그라운드 워터마크 아이콘 */}
                 {decision.status === 'SELECTED' && (
                   <div className="absolute right-[-20px] top-[-20px] opacity-[0.06] pointer-events-none text-emerald-800">
                     <Award className="w-48 h-48" />
@@ -413,100 +452,167 @@ export default function App() {
                 )}
 
                 {/* (1) 팀 타이틀 및 현황 상태 라벨 */}
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm md:text-base font-black text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-lg">{index+1}</span>
-                      <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
-                        {team.name} <span className="text-slate-500 font-bold text-lg">({team.location})</span>
-                      </h2>
+                <div>
+                  <div className="flex justify-between items-start mb-5">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm md:text-base font-black text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-lg">{index+1}</span>
+                        <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
+                          {team.name} <span className="text-slate-500 font-bold text-lg">({team.location})</span>
+                        </h2>
+                      </div>
+                    </div>
+
+                    {/* 최종 판정 배지 */}
+                    <motion.div 
+                      animate={decision.status !== 'EVALUATING' ? { scale: [1, 1.04, 1] } : {}}
+                      transition={{ repeat: Infinity, repeatDelay: 3, duration: 0.6 }}
+                      className={`px-3.5 py-2 rounded-full text-xs sm:text-sm font-black flex items-center gap-1.5 shrink-0 ${decision.badgeClass}`}
+                    >
+                      {decision.status === 'SELECTED' && <Sparkles className="w-4 h-4 text-white" />}
+                      {decision.status === 'REJECTED' && <XCircle className="w-4 h-4" />}
+                      {decision.status === 'DISCUSS' && <Info className="w-4 h-4" />}
+                      {decision.status === 'EVALUATING' && <span className="w-2 h-2 rounded-full bg-slate-300 animate-ping"></span>}
+                      <span>{decision.text}</span>
+                    </motion.div>
+                  </div>
+
+                  {/* 선정 불가 안내 박스 */}
+                  {decision.status === 'REJECTED' && (
+                    <div className="mb-5 p-3.5 bg-rose-100/90 border border-rose-300 rounded-xl text-rose-900 text-xs sm:text-sm font-extrabold flex items-center gap-2.5 shadow-xs">
+                      <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>선정 기준인 6.0점에 미달하였습니다.</span>
+                    </div>
+                  )}
+
+                  {/* 논의 대상 전용 노란색 강조 안내 박스 */}
+                  {decision.status === 'DISCUSS' && (
+                    <div className="mb-5 p-3.5 bg-amber-100/90 border border-amber-300 rounded-xl text-amber-900 text-xs sm:text-sm font-extrabold flex items-center gap-2.5 shadow-xs">
+                      <Info className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>조건부 적합 및 부적합 의견이 적합 의견보다 많아 심사위원 논의가 필요합니다.</span>
+                    </div>
+                  )}
+
+                  {/* (2) 점수 진행 바 추가 */}
+                  <div className="bg-white/80 p-4 rounded-xl mb-5 border border-slate-200/80 shadow-xs">
+                    <div className="flex justify-between items-center text-xs font-bold mb-2">
+                      <div className="flex items-center gap-1.5 text-slate-700">
+                        <TrendingUp className="w-4 h-4 text-slate-500" />
+                        <span>획득 점수</span>
+                        <span className="text-sm font-black text-slate-900 ml-1">
+                          {score.toFixed(1)} <span className="text-xs font-normal text-slate-500">/ 11점</span>
+                        </span>
+                      </div>
+                      <div className="text-[11px] sm:text-xs text-indigo-700 font-extrabold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                        선정 기준 6.0점
+                      </div>
+                    </div>
+
+                    {/* 점수 진행 바 트랙 */}
+                    <div className="relative w-full h-3.5 bg-slate-200 rounded-full overflow-hidden shadow-inner">
+                      {/* 6.0점 기준선 (6/11 = 54.55%) */}
+                      <div 
+                        className="absolute top-0 bottom-0 w-0.5 bg-indigo-600 z-10 shadow-xs" 
+                        style={{ left: `${(PASS_SCORE_THRESHOLD / TOTAL_JUDGES) * 100}%` }}
+                        title="선정 기준선 (6.0점)"
+                      />
+                      
+                      {/* 점수 채움 바 */}
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(100, (score / TOTAL_JUDGES) * 100)}%` }}
+                        transition={{ duration: 0.3 }}
+                        className={`h-full rounded-full ${decision.progressColor}`}
+                      />
+                    </div>
+
+                    {/* 기준선 표시 핀 라벨 */}
+                    <div className="relative w-full text-[10px] font-bold mt-1 h-3.5">
+                      <span 
+                        className="absolute -translate-x-1/2 text-indigo-600 font-extrabold flex items-center gap-0.5" 
+                        style={{ left: `${(PASS_SCORE_THRESHOLD / TOTAL_JUDGES) * 100}%` }}
+                      >
+                        ▲ 기준 6.0점
+                      </span>
                     </div>
                   </div>
 
-                  {/* 최종 판정 배지 (실시간 강조 애니메이션) */}
-                  <motion.div 
-                    animate={decision.status !== 'EVALUATING' ? { scale: [1, 1.05, 1] } : {}}
-                    transition={{ repeat: Infinity, repeatDelay: 3, duration: 0.6 }}
-                    className={`px-4 py-2 rounded-full text-sm font-black flex items-center gap-1.5 ${decision.badgeClass}`}
-                  >
-                    {decision.status === 'SELECTED' && <Sparkles className="w-4 h-4 text-white" />}
-                    {decision.status === 'REJECTED' && <XCircle className="w-4 h-4" />}
-                    {decision.status === 'EVALUATING' && <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>}
-                    <span>{decision.text}</span>
-                  </motion.div>
+                  {/* (3) 4개 핵심 결과 집계 박스 (적합, 조건부, 부적합, 총점) */}
+                  <div className="bg-slate-100/60 p-4 rounded-xl mb-5 border border-slate-200/50">
+                    <div className="grid grid-cols-4 gap-2.5 text-center">
+                      
+                      {/* 적합 */}
+                      <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl flex flex-col justify-between">
+                        <span className="text-[11px] font-bold text-emerald-700 block mb-1">적합</span>
+                        <span className="text-2xl font-extrabold text-emerald-600">
+                          <AnimatedCount value={team.votes.suitable} />
+                        </span>
+                        <span className="text-[10px] text-emerald-600 font-medium">1표당 1점</span>
+                      </div>
+
+                      {/* 조건부 */}
+                      <div className="bg-amber-50 border border-amber-100 p-2.5 rounded-xl flex flex-col justify-between">
+                        <span className="text-[11px] font-bold text-amber-700 block mb-1">조건부</span>
+                        <span className="text-2xl font-extrabold text-amber-600">
+                          <AnimatedCount value={team.votes.conditional} />
+                        </span>
+                        <span className="text-[10px] text-amber-600 font-medium">1표당 0.5점</span>
+                      </div>
+
+                      {/* 부적합 */}
+                      <div className="bg-red-50 border border-red-100 p-2.5 rounded-xl flex flex-col justify-between">
+                        <span className="text-[11px] font-bold text-red-700 block mb-1">부적합</span>
+                        <span className="text-2xl font-extrabold text-red-600">
+                          <AnimatedCount value={team.votes.unsuitable} />
+                        </span>
+                        <span className="text-[10px] text-red-600 font-medium">1표당 0점</span>
+                      </div>
+
+                      {/* 총점 */}
+                      <div className="bg-slate-900 text-white border border-slate-800 ring-2 ring-slate-900/10 p-2.5 rounded-xl flex flex-col justify-between shadow-xs">
+                        <span className="text-[11px] font-black text-white block mb-1">
+                          총점
+                        </span>
+                        <span className="text-2xl font-black text-white">
+                          <AnimatedCount value={`${score.toFixed(1)}점`} className="text-white font-black" />
+                        </span>
+                        <span className="text-[10px] text-slate-200 font-semibold">만점 11점</span>
+                      </div>
+
+                    </div>
+
+                    {/* 기존 투표 진행률 정보 유지 */}
+                    <div className="mt-4 pt-1">
+                      <div className="flex justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+                        <span>투표 진행률 ({totalEntered} / {TOTAL_JUDGES}명)</span>
+                        <span className="font-mono">{Math.round(getPct(totalEntered))}%</span>
+                      </div>
+                      {/* 게이지 바 본체 */}
+                      <div className="w-full h-2.5 bg-slate-200 rounded-full flex overflow-hidden">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${getPct(team.votes.suitable)}%` }}
+                          className="bg-emerald-500 h-full"
+                          title={`적합: ${team.votes.suitable}표`}
+                        />
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${getPct(team.votes.conditional)}%` }}
+                          className="bg-amber-500 h-full"
+                          title={`조건부: ${team.votes.conditional}표`}
+                        />
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${getPct(team.votes.unsuitable)}%` }}
+                          className="bg-rose-500 h-full"
+                          title={`부적합: ${team.votes.unsuitable}표`}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                {/* (2) 핵심 결과 스코어보드 (대화면 전광판 스타일) */}
-                <div className="bg-slate-100/60 p-4 rounded-xl mb-6 border border-slate-200/50">
-                  <div className="grid grid-cols-4 gap-3 text-center">
-                    
-                    {/* 적합 */}
-                    <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-xl flex flex-col justify-between">
-                      <span className="text-[11px] font-bold text-emerald-700 block mb-1">적합</span>
-                      <span className="text-2xl font-extrabold text-emerald-600">
-                        <AnimatedCount value={team.votes.suitable} />
-                      </span>
-                    </div>
-
-                    {/* 조건부 적합 */}
-                    <div className="bg-amber-50 border border-amber-100 p-2.5 rounded-xl flex flex-col justify-between">
-                      <span className="text-[11px] font-bold text-amber-700 block mb-1">조건부</span>
-                      <span className="text-2xl font-extrabold text-amber-600">
-                        <AnimatedCount value={team.votes.conditional} />
-                      </span>
-                    </div>
-
-                    {/* 부적합 */}
-                    <div className="bg-red-50 border border-red-100 p-2.5 rounded-xl flex flex-col justify-between">
-                      <span className="text-[11px] font-bold text-red-700 block mb-1">부적합</span>
-                      <span className="text-2xl font-extrabold text-red-600">
-                        <AnimatedCount value={team.votes.unsuitable} />
-                      </span>
-                    </div>
-
-                    {/* 합산 (적합 + 조건부) -> 대문짝만하게 강조 */}
-                    <div className="bg-slate-100 border border-slate-200 ring-2 ring-slate-900/5 p-2.5 rounded-xl flex flex-col justify-between">
-                      <span className="text-[11px] font-bold text-slate-700 block mb-1">
-                        선정 합계
-                      </span>
-                      <span className="text-2xl font-extrabold text-slate-900">
-                        <AnimatedCount value={passSum} />
-                      </span>
-                    </div>
-
-                  </div>
-
-                  {/* 누적 투표 비주얼 게이지 게이지 바 */}
-                  <div className="mt-4 pt-1">
-                    <div className="flex justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
-                      <span>투표 진행률 ({totalEntered} / {TOTAL_JUDGES}명)</span>
-                      <span>{Math.round(getPct(totalEntered))}%</span>
-                    </div>
-                    {/* 게이지 바 본체 */}
-                    <div className="w-full h-3 bg-slate-200 rounded-full flex overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${getPct(team.votes.suitable)}%` }}
-                        className="bg-emerald-500 h-full"
-                        title={`적합: ${team.votes.suitable}표`}
-                      />
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${getPct(team.votes.conditional)}%` }}
-                        className="bg-amber-500 h-full"
-                        title={`조건부: ${team.votes.conditional}표`}
-                      />
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${getPct(team.votes.unsuitable)}%` }}
-                        className="bg-rose-500 h-full"
-                        title={`부적합: ${team.votes.unsuitable}표`}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* (3) 심사위원 실시간 입력 제어 패널 */}
+                {/* (4) 심사위원 실시간 입력 제어 패널 */}
                 <div className="mt-1 overflow-hidden">
                   {/* 입력 버튼 행 */}
                   <div className="grid grid-cols-3 gap-3 mb-3.5">
@@ -564,7 +670,7 @@ export default function App() {
                     <button
                       id={`reset-btn-${team.id}`}
                       onClick={() => resetTeam(team.id)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       <span>초기화</span>
@@ -610,7 +716,7 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* 6. 전체 초기화 오클릭 방지를 위한 모달 (AnimatePresence 적용) */}
+      {/* 6. 전체 초기화 모달 */}
       <AnimatePresence>
         {showResetModal && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
@@ -636,14 +742,14 @@ export default function App() {
                 <button
                   id="confirm-modal-cancel"
                   onClick={() => setShowResetModal(false)}
-                  className="flex-1 py-3 px-4 rounded-xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all active:scale-98"
+                  className="flex-1 py-3 px-4 rounded-xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all active:scale-98 cursor-pointer"
                 >
                   취소
                 </button>
                 <button
                   id="confirm-modal-reset"
                   onClick={resetAllTeams}
-                  className="flex-1 py-3 px-4 rounded-xl text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all active:scale-98 shadow-md shadow-rose-200"
+                  className="flex-1 py-3 px-4 rounded-xl text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all active:scale-98 shadow-md shadow-rose-200 cursor-pointer"
                 >
                   초기화 실행
                 </button>
@@ -653,7 +759,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* 7. 저작권 및 푸터 */}
+      {/* 7. 푸터 */}
       <footer className="mt-auto pt-12 text-center text-xs text-slate-400 font-medium">
         <p>© 2026 BinglRoad Executive Dashboard. All Rights Reserved.</p>
       </footer>
