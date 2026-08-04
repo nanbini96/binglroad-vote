@@ -178,9 +178,7 @@ export default function App() {
         if (newTotal === TOTAL_JUDGES) {
           const finalScore = calculateScore(updatedVotes);
           if (finalScore < PASS_SCORE_THRESHOLD) {
-            showToast(`❌ [선정 불가] ${team.name} 팀의 총점이 ${finalScore.toFixed(1)}점으로 선정 기준(6.0점)에 미달하였습니다.`, 'error');
-          } else if (updatedVotes.conditional + updatedVotes.unsuitable > updatedVotes.suitable) {
-            showToast(`⚠️ [논의 대상] ${team.name} 팀은 조건부 적합 및 부적합 의견이 적합 의견보다 많아 심사위원 논의가 필요합니다.`, 'info');
+            showToast(`❌ [선정 불가] ${team.name} 팀 (총점 ${finalScore.toFixed(1)}점)`, 'error');
           } else {
             showToast(`🎉 [선정 확정] ${team.name} 팀이 총점 ${finalScore.toFixed(1)}점으로 연수팀으로 최종 선정되었습니다!`, 'success');
           }
@@ -272,38 +270,26 @@ export default function App() {
       };
     }
 
-    // 1. 총점이 6.0점 미만인 경우 -> 「선정 불가」
-    if (score < PASS_SCORE_THRESHOLD) {
+    // 1. 총점이 6.0점 이상인 경우 -> 「연수팀 선정」
+    if (score >= PASS_SCORE_THRESHOLD) {
       return {
-        status: 'REJECTED' as const,
-        text: '선정 불가',
-        badgeClass: 'bg-rose-500 text-white shadow-md font-extrabold',
-        cardClass: 'border-3 border-rose-500 bg-rose-50/70 shadow-[0_0_20px_rgba(244,63,94,0.15)] transition-all duration-300',
-        color: 'rose',
-        progressColor: 'bg-rose-500'
+        status: 'SELECTED' as const,
+        text: '연수팀 선정',
+        badgeClass: 'bg-emerald-500 text-white shadow-md font-extrabold',
+        cardClass: 'border-3 border-emerald-500 bg-emerald-50/70 shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all duration-300',
+        color: 'emerald',
+        progressColor: 'bg-emerald-500'
       };
     }
 
-    // 2. 총점이 6.0점 이상이면서, 조건부 적합과 부적합의 합계가 적합 표 수보다 많은 경우 -> 「심사위원 논의 대상」
-    if (votes.conditional + votes.unsuitable > votes.suitable) {
-      return {
-        status: 'DISCUSS' as const,
-        text: '심사위원 논의 대상',
-        badgeClass: 'bg-amber-500 text-white shadow-md font-extrabold',
-        cardClass: 'border-3 border-amber-500 bg-amber-50/70 shadow-[0_0_20px_rgba(245,158,11,0.2)] transition-all duration-300',
-        color: 'amber',
-        progressColor: 'bg-amber-500'
-      };
-    }
-
-    // 3. 총점이 6.0점 이상이면서, 적합 표 수가 조건부 적합과 부적합의 합계보다 많거나 같은 경우 -> 「연수팀 선정」
+    // 2. 총점이 6.0점 미만인 경우 -> 「선정 불가」
     return {
-      status: 'SELECTED' as const,
-      text: '연수팀 선정',
-      badgeClass: 'bg-emerald-500 text-white shadow-md font-extrabold',
-      cardClass: 'border-3 border-emerald-500 bg-emerald-50/70 shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all duration-300',
-      color: 'emerald',
-      progressColor: 'bg-emerald-500'
+      status: 'REJECTED' as const,
+      text: '선정 불가',
+      badgeClass: 'bg-rose-500 text-white shadow-md font-extrabold',
+      cardClass: 'border-3 border-rose-500 bg-rose-50/70 shadow-[0_0_20px_rgba(244,63,94,0.15)] transition-all duration-300',
+      color: 'rose',
+      progressColor: 'bg-rose-500'
     };
   };
 
@@ -366,8 +352,8 @@ export default function App() {
       {/* 2. 대시보드 규정 가이드 영역 */}
       <main className="max-w-7xl mx-auto px-6 pt-8 flex-1 w-full">
         
-        {/* 상단 통합 안내 현황판 (5개 카드로 가시성 극대화) */}
-        <section className="grid grid-cols-2 md:grid-cols-5 gap-3.5 mb-8">
+        {/* 상단 통합 안내 현황판 (4개 카드로 가시성 극대화) */}
+        <section className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 mb-8">
           
           {/* 1. 심사위원 */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
@@ -384,8 +370,8 @@ export default function App() {
               <Sliders className="w-4 h-4 text-blue-600" />
               <span className="text-xs font-bold text-slate-400 uppercase">점수 기준</span>
             </div>
-            <h3 className="text-xs sm:text-sm font-extrabold text-slate-800 leading-snug">
-              적합 1점 · 조건부 0.5점<br />· 부적합 0점
+            <h3 className="text-[11px] min-[380px]:text-xs sm:text-[13px] md:text-sm lg:text-[15px] font-black text-slate-900 whitespace-nowrap tracking-tight">
+              적합 1점 · 조건부 0.5점 · 부적합 0점
             </h3>
           </div>
 
@@ -398,19 +384,8 @@ export default function App() {
             <h3 className="text-lg font-black text-emerald-600">총점 6.0점 이상</h3>
           </div>
 
-          {/* 4. 논의 대상 */}
+          {/* 4. 선정 불가 */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center gap-2 text-slate-500 mb-2">
-              <Info className="w-4 h-4 text-amber-600" />
-              <span className="text-xs font-bold text-slate-400 uppercase">논의 대상</span>
-            </div>
-            <h3 className="text-xs sm:text-sm font-black text-amber-600 leading-snug">
-              총점 6.0점 이상 중<br />조건부 적합+부적합 &gt; 적합
-            </h3>
-          </div>
-
-          {/* 5. 선정 불가 */}
-          <div className="col-span-2 md:col-span-1 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
             <div className="flex items-center gap-2 text-slate-500 mb-2">
               <XCircle className="w-4 h-4 text-rose-600" />
               <span className="text-xs font-bold text-slate-400 uppercase">선정 불가</span>
@@ -470,28 +445,11 @@ export default function App() {
                       className={`px-3.5 py-2 rounded-full text-xs sm:text-sm font-black flex items-center gap-1.5 shrink-0 ${decision.badgeClass}`}
                     >
                       {decision.status === 'SELECTED' && <Sparkles className="w-4 h-4 text-white" />}
-                      {decision.status === 'REJECTED' && <XCircle className="w-4 h-4" />}
-                      {decision.status === 'DISCUSS' && <Info className="w-4 h-4" />}
+                      {decision.status === 'REJECTED' && <XCircle className="w-4 h-4 text-white" />}
                       {decision.status === 'EVALUATING' && <span className="w-2 h-2 rounded-full bg-slate-300 animate-ping"></span>}
                       <span>{decision.text}</span>
                     </motion.div>
                   </div>
-
-                  {/* 선정 불가 안내 박스 */}
-                  {decision.status === 'REJECTED' && (
-                    <div className="mb-5 p-3.5 bg-rose-100/90 border border-rose-300 rounded-xl text-rose-900 text-xs sm:text-sm font-extrabold flex items-center gap-2.5 shadow-xs">
-                      <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>선정 기준인 6.0점에 미달하였습니다.</span>
-                    </div>
-                  )}
-
-                  {/* 논의 대상 전용 노란색 강조 안내 박스 */}
-                  {decision.status === 'DISCUSS' && (
-                    <div className="mb-5 p-3.5 bg-amber-100/90 border border-amber-300 rounded-xl text-amber-900 text-xs sm:text-sm font-extrabold flex items-center gap-2.5 shadow-xs">
-                      <Info className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>조건부 적합 및 부적합 의견이 적합 의견보다 많아 심사위원 논의가 필요합니다.</span>
-                    </div>
-                  )}
 
                   {/* (2) 점수 진행 바 추가 */}
                   <div className="bg-white/80 p-4 rounded-xl mb-5 border border-slate-200/80 shadow-xs">
